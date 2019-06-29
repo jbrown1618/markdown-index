@@ -45,6 +45,8 @@ func init() {
 	rootCmd.PersistentFlags().String("root", "./", "Specify the root directory for which to create an index")
 }
 
+// Execute is the entry point for the root command.
+// It will parse the command line arguments and create the index.md file.
 func Execute() {
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Println(err)

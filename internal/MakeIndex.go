@@ -9,7 +9,8 @@ import (
 	"strings"
 )
 
-// MakeIndex takes a directory path and returns the contents of a file which indexes the markdown files in that directory
+// MakeIndex takes a directory path and returns the contents of
+// a file which indexes the markdown files in that directory
 func MakeIndex(dirPath string) string {
 	os.Chdir(dirPath)
 
