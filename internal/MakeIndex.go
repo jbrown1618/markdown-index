@@ -11,6 +11,8 @@ import (
 
 // MakeIndex takes a directory path and returns the contents of a file which indexes the markdown files in that directory
 func MakeIndex(dirPath string) string {
+	os.Chdir(dirPath)
+
 	indexContents := make([]string, 0)
 	indexContents = append(indexContents, "# Index")
 	filepath.Walk(dirPath, func(currentPath string, info os.FileInfo, err error) error {
