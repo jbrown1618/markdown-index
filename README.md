@@ -35,7 +35,7 @@ root/
 Running `markdown-index --root /path/to/root` will generate a file `/path/to/root/index.md` with contents:
 
 ```markdown
-# Index
+# Root
 ## Ideas
 - [My Good Idea](./Ideas/good-idea.md)
 - [My Bad Idea](./Ideas/bad-idea.md)

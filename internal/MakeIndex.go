@@ -2,6 +2,8 @@ package internal
 
 import (
 	"bufio"
+	"errors"
+	"io/ioutil"
 	"os"
 	"path"
 	"path/filepath"
@@ -11,50 +13,72 @@ import (
 
 // MakeIndex takes a directory path and returns the contents of
 // a file which indexes the markdown files in that directory
-func MakeIndex(dirPath string) string {
+func MakeIndex(dirPath string) (string, error) {
 	os.Chdir(dirPath)
 
-	indexContents := make([]string, 0)
-	indexContents = append(indexContents, "# Index")
-	filepath.Walk(dirPath, func(currentPath string, info os.FileInfo, err error) error {
-		if currentPath == dirPath {
-			return nil
-		}
-		currentPath, err = filepath.Rel(dirPath, currentPath)
-		if err != nil {
-			return err
+	index, err := indexDirectory(dirPath, dirPath)
+	if err != nil {
+		return "", err
+	}
+
+	return WriteIndex(index), nil
+}
+
+func indexDirectory(rootPath string, dirPath string) (DirectoryIndex, error) {
+	var index DirectoryIndex
+	var subDirectories []DirectoryIndex
+	var markdownFiles []FileIndex
+
+	files, err := ioutil.ReadDir(dirPath)
+	if err != nil {
+		return index, err
+	}
+
+	for _, info := range files {
+		name := info.Name()
+		if ShouldSkip(name) {
+			continue
 		}
 
 		if info.IsDir() {
-			indexContents = append(indexContents, indexDirectory(currentPath))
-		} else if filepath.Ext(currentPath) == ".md" {
-			if info.Name() == "index.md" {
-				return nil
+			subDirIndex, err := indexDirectory(rootPath, path.Join(dirPath, name))
+			if err != nil {
+				continue
 			}
-			indexContents = append(indexContents, indexFile(currentPath))
+			subDirectories = append(subDirectories, subDirIndex)
+		} else {
+			ext := filepath.Ext(name)
+			if ext != ".md" {
+				continue
+			}
+			fileIndex := indexFile(rootPath, path.Join(dirPath, name))
+			markdownFiles = append(markdownFiles, fileIndex)
 		}
-		return nil
-	})
-	return strings.Join(indexContents, "\n")
+	}
+
+	if len(subDirectories) == 0 && len(markdownFiles) == 0 {
+		return index, errors.New("Empty directory")
+	}
+
+	return DirectoryIndex{
+		Name:           getDirectoryTitle(dirPath),
+		SubDirectories: subDirectories,
+		MarkdownFiles:  markdownFiles,
+	}, nil
 }
 
-func indexDirectory(dirPath string) string {
+func indexFile(rootPath, filePath string) FileIndex {
+	path := strings.Replace(filePath, rootPath, ".", 1)
+	return FileIndex{
+		Title: getFileTitle(filePath),
+		Path:  path,
+	}
+}
+
+func getDirectoryTitle(dirPath string) string {
 	_, dirName := path.Split(dirPath)
 	re := regexp.MustCompile(`[\-\_]`)
-	header := re.ReplaceAllString(dirName, " ")
-
-	numSeparators := strings.Count(dirPath, string(filepath.Separator))
-	prefix := "##"
-	for i := 0; i < numSeparators; i++ {
-		prefix += "#"
-	}
-	return prefix + " " + header
-}
-
-func indexFile(filePath string) string {
-	relativePath := "./" + filePath
-	title := getFileTitle(filePath)
-	return "- [" + title + "](" + relativePath + ")"
+	return strings.Title(re.ReplaceAllString(dirName, " "))
 }
 
 func getFileTitle(filePath string) string {

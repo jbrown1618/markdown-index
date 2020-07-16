@@ -2,19 +2,23 @@ package cmd
 
 import (
 	"fmt"
+	"log"
+	"os"
+
 	"github.com/jbrown1618/markdown-index/internal"
 	"github.com/skratchdot/open-golang/open"
 	"github.com/spf13/cobra"
-	"log"
-	"os"
 )
-
-var indexFileName = "index.md"
 
 var rootCmd = &cobra.Command{
 	Use: "markdown-index",
 	Run: func(cmd *cobra.Command, args []string) {
 		rootDir, err := cmd.Flags().GetString("root")
+		if err != nil {
+			log.Fatal(err)
+			return
+		}
+		indexFileName, err := cmd.Flags().GetString("out")
 		if err != nil {
 			log.Fatal(err)
 			return
@@ -25,7 +29,17 @@ var rootCmd = &cobra.Command{
 			return
 		}
 
+		internal.Skip(indexFileName)
+		internal.Skip(".git")
+
 		os.Chdir(rootDir)
+
+		contents, err := internal.MakeIndex(rootDir)
+		if err != nil {
+			log.Fatal(err)
+			return
+		}
+
 		indexFile, err := os.Create(indexFileName)
 		if err != nil {
 			log.Fatal(err)
@@ -33,7 +47,8 @@ var rootCmd = &cobra.Command{
 		}
 		defer indexFile.Close()
 
-		indexFile.WriteString(internal.MakeIndex(rootDir))
+		indexFile.WriteString(contents)
+
 		if openBrowser {
 			open.RunWith(indexFileName, "Google Chrome")
 		}
@@ -43,6 +58,7 @@ var rootCmd = &cobra.Command{
 func init() {
 	rootCmd.PersistentFlags().Bool("browser", false, "Open the index file in a web browser")
 	rootCmd.PersistentFlags().String("root", "./", "Specify the root directory for which to create an index")
+	rootCmd.PersistentFlags().String("out", "index.md", "Specify the name of the index file to create")
 }
 
 // Execute is the entry point for the root command.
