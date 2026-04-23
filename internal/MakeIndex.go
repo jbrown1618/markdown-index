@@ -125,11 +125,11 @@ func getDirectoryTitle(dirPath string) string {
 func getFileTitle(filePath string) string {
 	absPath, err := filepath.Abs(filePath)
 	if err != nil {
-		return filePath
+		return fileNameAsTitle(filePath)
 	}
 	file, err := os.Open(absPath)
 	if err != nil {
-		return filePath
+		return fileNameAsTitle(filePath)
 	}
 	defer file.Close()
 
@@ -144,5 +144,12 @@ func getFileTitle(filePath string) string {
 		}
 	}
 
-	return filePath
+	return fileNameAsTitle(filePath)
+}
+
+func fileNameAsTitle(filePath string) string {
+	_, name := filepath.Split(filePath)
+	name = strings.TrimSuffix(name, filepath.Ext(name))
+	re := regexp.MustCompile(`[\-\_]`)
+	return re.ReplaceAllString(name, " ")
 }
