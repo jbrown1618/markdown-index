@@ -5,7 +5,7 @@ A CLI for creating an index for a directory full of markdown files
 ## Installation
 
 ```
-go get github.com/jbrown1618/markdown-index
+go install github.com/jbrown1618/markdown-index@latest
 ```
 
 ## Usage

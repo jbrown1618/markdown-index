@@ -3,20 +3,26 @@ package internal
 import (
 	"bufio"
 	"errors"
-	"io/ioutil"
 	"os"
 	"path"
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
+
+	"golang.org/x/text/cases"
+	"golang.org/x/text/language"
 )
 
 // MakeIndex takes a directory path and returns the contents of
 // a file which indexes the markdown files in that directory
 func MakeIndex(dirPath string) (string, error) {
-	os.Chdir(dirPath)
+	absPath, err := filepath.Abs(dirPath)
+	if err != nil {
+		return "", err
+	}
 
-	index, err := indexDirectory(dirPath, dirPath)
+	index, err := indexDirectory(absPath, absPath)
 	if err != nil {
 		return "", err
 	}
@@ -26,59 +32,94 @@ func MakeIndex(dirPath string) (string, error) {
 
 func indexDirectory(rootPath string, dirPath string) (DirectoryIndex, error) {
 	var index DirectoryIndex
-	var subDirectories []DirectoryIndex
-	var markdownFiles []FileIndex
 
-	files, err := ioutil.ReadDir(dirPath)
+	entries, err := os.ReadDir(dirPath)
 	if err != nil {
 		return index, err
 	}
 
-	for _, info := range files {
-		name := info.Name()
+	// Separate entries into dirs and markdown files, preserving order
+	type dirEntry struct {
+		idx  int
+		path string
+	}
+	type fileEntry struct {
+		idx  int
+		path string
+	}
+
+	var dirEntries []dirEntry
+	var fileEntries []fileEntry
+
+	for _, entry := range entries {
+		name := entry.Name()
 		if ShouldSkip(name) {
 			continue
 		}
-
-		if info.IsDir() {
-			subDirIndex, err := indexDirectory(rootPath, path.Join(dirPath, name))
-			if err != nil {
-				continue
-			}
-			subDirectories = append(subDirectories, subDirIndex)
-		} else {
-			ext := filepath.Ext(name)
-			if ext != ".md" {
-				continue
-			}
-			fileIndex := indexFile(rootPath, path.Join(dirPath, name))
-			markdownFiles = append(markdownFiles, fileIndex)
+		if entry.IsDir() {
+			dirEntries = append(dirEntries, dirEntry{len(dirEntries), path.Join(dirPath, name)})
+		} else if filepath.Ext(name) == ".md" {
+			fileEntries = append(fileEntries, fileEntry{len(fileEntries), path.Join(dirPath, name)})
 		}
 	}
 
-	if len(subDirectories) == 0 && len(markdownFiles) == 0 {
-		return index, errors.New("Empty directory")
+	// Index subdirectories concurrently
+	subDirResults := make([]DirectoryIndex, len(dirEntries))
+	subDirErrors := make([]error, len(dirEntries))
+	var wg sync.WaitGroup
+
+	for _, d := range dirEntries {
+		wg.Add(1)
+		go func(i int, p string) {
+			defer wg.Done()
+			subDirResults[i], subDirErrors[i] = indexDirectory(rootPath, p)
+		}(d.idx, d.path)
+	}
+
+	// Index markdown files concurrently
+	fileResults := make([]FileIndex, len(fileEntries))
+	for _, f := range fileEntries {
+		wg.Add(1)
+		go func(i int, p string) {
+			defer wg.Done()
+			fileResults[i] = indexFile(rootPath, p)
+		}(f.idx, f.path)
+	}
+
+	wg.Wait()
+
+	// Collect results in original order, skipping failed subdirectories
+	var subDirectories []DirectoryIndex
+	for i, result := range subDirResults {
+		if subDirErrors[i] == nil {
+			subDirectories = append(subDirectories, result)
+		}
+	}
+
+	if len(subDirectories) == 0 && len(fileResults) == 0 {
+		return index, errors.New("empty directory")
 	}
 
 	return DirectoryIndex{
 		Name:           getDirectoryTitle(dirPath),
 		SubDirectories: subDirectories,
-		MarkdownFiles:  markdownFiles,
+		MarkdownFiles:  fileResults,
 	}, nil
 }
 
 func indexFile(rootPath, filePath string) FileIndex {
-	path := strings.Replace(filePath, rootPath, ".", 1)
+	p := strings.Replace(filePath, rootPath, ".", 1)
 	return FileIndex{
 		Title: getFileTitle(filePath),
-		Path:  path,
+		Path:  p,
 	}
 }
 
 func getDirectoryTitle(dirPath string) string {
 	_, dirName := path.Split(dirPath)
 	re := regexp.MustCompile(`[\-\_]`)
-	return strings.Title(re.ReplaceAllString(dirName, " "))
+	caser := cases.Title(language.English, cases.NoLower)
+	return caser.String(re.ReplaceAllString(dirName, " "))
 }
 
 func getFileTitle(filePath string) string {
@@ -87,10 +128,10 @@ func getFileTitle(filePath string) string {
 		return filePath
 	}
 	file, err := os.Open(absPath)
-	defer file.Close()
 	if err != nil {
 		return filePath
 	}
+	defer file.Close()
 
 	titlePattern := regexp.MustCompile(`^\s?#\s`)
 

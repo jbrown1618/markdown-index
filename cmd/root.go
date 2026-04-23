@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
 
 	"github.com/jbrown1618/markdown-index/internal"
 	"github.com/skratchdot/open-golang/open"
@@ -29,18 +30,23 @@ var rootCmd = &cobra.Command{
 			return
 		}
 
-		internal.Skip(indexFileName)
-		internal.Skip(".git")
-
-		os.Chdir(rootDir)
-
-		contents, err := internal.MakeIndex(rootDir)
+		absRoot, err := filepath.Abs(rootDir)
 		if err != nil {
 			log.Fatal(err)
 			return
 		}
 
-		indexFile, err := os.Create(indexFileName)
+		internal.Skip(indexFileName)
+		internal.Skip(".git")
+
+		contents, err := internal.MakeIndex(absRoot)
+		if err != nil {
+			log.Fatal(err)
+			return
+		}
+
+		outPath := filepath.Join(absRoot, indexFileName)
+		indexFile, err := os.Create(outPath)
 		if err != nil {
 			log.Fatal(err)
 			return
@@ -50,7 +56,7 @@ var rootCmd = &cobra.Command{
 		indexFile.WriteString(contents)
 
 		if openBrowser {
-			open.RunWith(indexFileName, "Google Chrome")
+			open.Run(outPath)
 		}
 	},
 }
